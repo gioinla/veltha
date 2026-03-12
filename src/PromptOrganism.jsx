@@ -61,7 +61,11 @@ async function evolvePrompt(currentPrompt, generation, vaultVision, vaultProject
     body: JSON.stringify({ currentPrompt, generation, vaultVision, vaultProject, blendValue }),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Evolution failed");
+  if (!response.ok) {
+    const err = new Error(data.message || data.error || "Evolution failed");
+    err.code = data.error;
+    throw err;
+  }
   return data;
 }
 
@@ -107,7 +111,7 @@ export default function PromptOrganism() {
       setCurrent({ id: Date.now(), generation: nextGen, prompt: result.prompt, params: result.params, mutation: result.mutation, status: "pending" });
       setActiveTab("current");
     } catch (e) {
-      setError(`Evolution failed: ${e.message}`);
+      setError(e.code === "INSUFFICIENT_CREDITS" ? e.message : `Evolution failed: ${e.message}`);
     }
     setEvolving(false);
   };
@@ -282,7 +286,26 @@ export default function PromptOrganism() {
 
             {/* Error */}
             {error && (
-              <div style={{ color: "#8a3a3a", fontSize: 12, marginBottom: 16, fontStyle: "italic" }}>{error}</div>
+              <div style={{ color: "#8a3a3a", fontSize: 12, marginBottom: 16, lineHeight: 1.7 }}>
+                {error.includes("console.anthropic.com") ? (
+                  <>
+                    <span style={{ fontStyle: "italic" }}>
+                      Your Anthropic API account has no credits. Add credits at{" "}
+                    </span>
+                    <a
+                      href="https://console.anthropic.com/settings/billing"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#c8a84a", textDecoration: "underline" }}
+                    >
+                      console.anthropic.com/settings/billing
+                    </a>
+                    <span style={{ fontStyle: "italic" }}>, then try again.</span>
+                  </>
+                ) : (
+                  <span style={{ fontStyle: "italic" }}>{error}</span>
+                )}
+              </div>
             )}
 
             {/* Controls */}

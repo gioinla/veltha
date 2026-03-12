@@ -104,7 +104,7 @@ Push ONE dimension further. Preserve dignity. Preserve the moral carrier. Respon
   try {
     const response = await evolveWithBlend(
       {
-        model: "claude-opus-4-6",
+        model: "claude-haiku-4-5",
         max_tokens: 1500,
         system: buildSystemPrompt(vaultVision, vaultProject),
         messages: [{ role: "user", content: userMessage }],
@@ -126,6 +126,21 @@ Push ONE dimension further. Preserve dignity. Preserve the moral carrier. Respon
     res.json(parsed);
   } catch (err) {
     console.error("Evolution error:", err.message);
+
+    // Detect Anthropic credit / billing errors
+    const msg = err.message || "";
+    const isCreditError =
+      (err.status === 400 || err.status === 402) &&
+      msg.includes("credit balance is too low");
+
+    if (isCreditError) {
+      return res.status(402).json({
+        error: "INSUFFICIENT_CREDITS",
+        message:
+          "Your Anthropic API account has no credits. Add credits at console.anthropic.com/settings/billing, then try again.",
+      });
+    }
+
     res.status(500).json({ error: err.message });
   }
 });
