@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import express from "express";
+import { createServer } from "http";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -158,6 +159,7 @@ Push ONE dimension further. Preserve dignity. Preserve the moral carrier. Respon
 });
 
 const PORT = 3001;
-app.listen(PORT, () => {
+const httpServer = createServer(app);
+httpServer.listen(PORT, () => {
   console.log(`VELTHA server running on http://localhost:${PORT}`);
 });
