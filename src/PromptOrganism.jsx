@@ -52,13 +52,84 @@ const SEED_PARAMS = {
   motion: "none — still",
 };
 
+// ── Scene definitions ─────────────────────────────────────────────────────────
+
+const IMEN_SCENES = [
+  {
+    id: "canister",
+    label: "Scene 1 — The Canister",
+    context: `ACTIVE SCENE: THE CANISTER SCENE
+A single vertical glass canister, floor-to-ceiling, floating in deep black space. Inside, a Black man in his 40s — preserved, not trapped. IMAX scale. Specimen lighting. Warm amber/gold interior. Cold blue-black exterior. The moral carrier: a museum that should not exist.`,
+  },
+  {
+    id: "five_families",
+    label: "Scene 2 — The Five Families",
+    context: `ACTIVE SCENE: THE FIVE FAMILIES SCENE
+Power structure meeting. Old empire in the room. The Matriarch's wheelchair presence reframes everything — this isn't new money, this is colonial capital on life support. The extraction is institutional, inherited, maternal.`,
+  },
+  {
+    id: "matriarch",
+    label: "Scene 3 — The Matriarch",
+    context: `ACTIVE SCENE: THE MATRIARCH
+England family. Wheelchair. Oxygen tank. Watches on a screen while Biz runs the operation below. She IS the colonial money — aging, on life support, needing new genetic material to survive. Empire in a wheelchair watching its investment. She didn't build this. She inherited it. And it is keeping her alive.`,
+  },
+  {
+    id: "biz",
+    label: "Scene 4 — Biz Bixby",
+    context: `ACTIVE SCENE: BIZ BIXBY
+Runs the operation. Colonial money, but not its origin. He is the executor, not the source. He inherited this. He didn't build it. The weight of what he is doing lands differently because he never chose to begin — only to continue.`,
+  },
+  {
+    id: "full",
+    label: "Full Script — All Scenes",
+    context: "",
+  },
+];
+
+// ── Timeline helpers ──────────────────────────────────────────────────────────
+
+const MIN_YEAR = -3000;
+const MAX_YEAR = 2026;
+
+function eraLabel(year) {
+  if (year >= 2020) return "Present Day";
+  if (year >= 2000) return "21st Century";
+  if (year >= 1980) return "Late 20th Century";
+  if (year >= 1950) return "Mid-20th Century";
+  if (year >= 1900) return "Early Modern";
+  if (year >= 1800) return "Industrial Age";
+  if (year >= 1700) return "Age of Enlightenment";
+  if (year >= 1500) return "Renaissance";
+  if (year >= 1000) return "Medieval";
+  if (year >= 500) return "Late Antiquity";
+  if (year >= 0) return "Classical Era";
+  if (year >= -500) return "Ancient Classical";
+  if (year >= -1500) return "Bronze Age";
+  return "Deep Ancient";
+}
+
+function displayYear(year) {
+  if (year < 0) return `${Math.abs(year)} BCE`;
+  if (year < 1000) return `${year} CE`;
+  return `${year}`;
+}
+
+function parseYearInput(val) {
+  const upper = val.toUpperCase().trim();
+  const isBCE = upper.includes("BCE") || upper.includes("BC");
+  const digits = parseInt(val.replace(/[^0-9]/g, ""), 10);
+  if (isNaN(digits)) return null;
+  const year = isBCE ? -digits : digits;
+  return Math.max(MIN_YEAR, Math.min(MAX_YEAR, year));
+}
+
 // ── API call ─────────────────────────────────────────────────────────────────
 
-async function evolvePrompt(currentPrompt, generation, vaultVision, vaultProject, blendValue) {
+async function evolvePrompt(currentPrompt, generation, vaultVision, vaultProject, timeYear, sceneContext) {
   const response = await fetch("/api/evolve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ currentPrompt, generation, vaultVision, vaultProject, blendValue }),
+    body: JSON.stringify({ currentPrompt, generation, vaultVision, vaultProject, timeYear, sceneContext }),
   });
   const data = await response.json();
   if (!response.ok) {
@@ -67,18 +138,6 @@ async function evolvePrompt(currentPrompt, generation, vaultVision, vaultProject
     throw err;
   }
   return data;
-}
-
-// ── Blend slider label ────────────────────────────────────────────────────────
-
-function blendLabel(val) {
-  if (val === 0) return "Pure Script";
-  if (val <= 20) return "Mostly Script";
-  if (val <= 45) return "Script-Led";
-  if (val <= 55) return "Equal Blend";
-  if (val <= 75) return "World-Led";
-  if (val <= 95) return "Mostly World";
-  return "Pure World";
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -92,7 +151,9 @@ export default function PromptOrganism() {
   });
   const [vaultVision, setVaultVision] = useState(IMEN_VISION);
   const [vaultProject, setVaultProject] = useState(IMEN_PROJECT);
-  const [blendValue, setBlendValue] = useState(0);
+  const [selectedScene, setSelectedScene] = useState("canister");
+  const [timeYear, setTimeYear] = useState(MAX_YEAR);
+  const [yearInput, setYearInput] = useState(String(MAX_YEAR));
   const [evolving, setEvolving] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("current");
@@ -103,11 +164,40 @@ export default function PromptOrganism() {
   const nextGen = Math.max(...generations.map((g) => g.generation)) + 1;
   const isNewGeneration = !generations.find((g) => g.id === current.id);
 
+  const handleSliderChange = (e) => {
+    const y = Number(e.target.value);
+    setTimeYear(y);
+    setYearInput(displayYear(y));
+  };
+
+  const handleYearInputChange = (e) => {
+    setYearInput(e.target.value);
+  };
+
+  const handleYearInputBlur = () => {
+    const parsed = parseYearInput(yearInput);
+    if (parsed !== null) {
+      setTimeYear(parsed);
+      setYearInput(displayYear(parsed));
+    } else {
+      setYearInput(displayYear(timeYear));
+    }
+  };
+
+  const handleYearInputKeyDown = (e) => {
+    if (e.key === "Enter") e.target.blur();
+  };
+
   const handleEvolve = async () => {
     setEvolving(true);
     setError(null);
     try {
-      const result = await evolvePrompt(current.prompt, current.generation, vaultVision, vaultProject, blendValue);
+      const scene = IMEN_SCENES.find((s) => s.id === selectedScene);
+      const result = await evolvePrompt(
+        current.prompt, current.generation,
+        vaultVision, vaultProject,
+        timeYear, scene?.context || ""
+      );
       setCurrent({ id: Date.now(), generation: nextGen, prompt: result.prompt, params: result.params, mutation: result.mutation, status: "pending" });
       setActiveTab("current");
     } catch (e) {
@@ -135,8 +225,8 @@ export default function PromptOrganism() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  // blend gradient: amber (script) → blue-grey (world)
-  const blendGradient = `linear-gradient(to right, #c8a84a, #4a6a8a)`;
+  const timelineGradient = `linear-gradient(to right, #2a3a5a, #4a6a8a, #c8a84a)`;
+  const isPresent = timeYear >= 2020;
 
   return (
     <div style={{ background: "#080808", minHeight: "100vh", fontFamily: "'Courier New', monospace", color: "#e8e0d0", display: "flex", flexDirection: "column" }}>
@@ -224,30 +314,86 @@ export default function PromptOrganism() {
         {/* ── CURRENT TAB ── */}
         {activeTab === "current" && (
           <div>
-            {/* Blend Slider */}
+
+            {/* Scene Selector */}
+            <div style={{ marginBottom: 16, padding: "14px 20px", background: "#0a0a0a", border: "1px solid #141414" }}>
+              <div style={{ fontSize: 9, color: "#c8a84a", letterSpacing: 3, textTransform: "uppercase", marginBottom: 8 }}>
+                Active Scene
+              </div>
+              <select
+                value={selectedScene}
+                onChange={(e) => setSelectedScene(e.target.value)}
+                style={{
+                  width: "100%", background: "#111108", border: "1px solid #c8a84a44",
+                  color: "#d8d0be", padding: "10px 14px", fontSize: 12,
+                  fontFamily: "'Courier New', monospace", cursor: "pointer", outline: "none",
+                  appearance: "none",
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23c8a84a'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 14px center",
+                  paddingRight: "36px",
+                }}
+              >
+                {IMEN_SCENES.map((scene) => (
+                  <option key={scene.id} value={scene.id} style={{ background: "#111108" }}>
+                    {scene.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Timeline Slider */}
             <div style={{ marginBottom: 28, padding: "18px 20px", background: "#0a0a0a", border: "1px solid #141414" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div style={{ fontSize: 9, color: "#c8a84a", letterSpacing: 3, textTransform: "uppercase" }}>Script</div>
-                <div style={{ fontSize: 11, color: "#aaa890", letterSpacing: 2 }}>{blendLabel(blendValue)}</div>
-                <div style={{ fontSize: 9, color: "#6a8aaa", letterSpacing: 3, textTransform: "uppercase" }}>World</div>
+                <div style={{ fontSize: 9, color: "#4a6a8a", letterSpacing: 3, textTransform: "uppercase" }}>3000 BCE</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontSize: 11, color: "#aaa890", letterSpacing: 2 }}>{eraLabel(timeYear)}</div>
+                  {isPresent && (
+                    <div style={{ fontSize: 9, color: "#6a8aaa", letterSpacing: 2, textTransform: "uppercase", border: "1px solid #4a6a8a44", padding: "2px 8px" }}>
+                      web search on
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontSize: 9, color: "#c8a84a", letterSpacing: 3, textTransform: "uppercase" }}>Now</div>
               </div>
               <div style={{ position: "relative" }}>
                 <div style={{
                   position: "absolute", top: "50%", left: 0, right: 0,
-                  height: 3, background: blendGradient,
+                  height: 3, background: timelineGradient,
                   transform: "translateY(-50%)", borderRadius: 2, pointerEvents: "none",
                 }} />
                 <input
-                  type="range" min={0} max={100} value={blendValue}
-                  onChange={(e) => setBlendValue(Number(e.target.value))}
+                  type="range" min={MIN_YEAR} max={MAX_YEAR} value={timeYear}
+                  onChange={handleSliderChange}
                   style={{ width: "100%", appearance: "none", background: "transparent", cursor: "pointer", position: "relative", zIndex: 1, height: 20 }}
                 />
               </div>
-              <div style={{ fontSize: 10, color: "#7a7860", marginTop: 8, fontStyle: "italic" }}>
-                {blendValue === 0 && "Drawing from spine + mythology bed only."}
-                {blendValue > 0 && blendValue < 40 && "Faint world resonance — spine leads."}
-                {blendValue >= 40 && blendValue < 60 && "Live web search active — past and present in equal tension."}
-                {blendValue >= 60 && "Live web search active — the present moment leads."}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
+                <div style={{ fontSize: 10, color: "#7a7860", fontStyle: "italic", flex: 1 }}>
+                  {isPresent
+                    ? "Live world search active — drawing from the present moment."
+                    : timeYear >= 1800
+                      ? "Drawing from documented history — the record exists but was curated by power."
+                      : timeYear >= 0
+                        ? "Drawing from ancient records — fragmentary, interpreted, generative in its gaps."
+                        : "Deep ancient time — almost no record survives. The mythology bed speaks alone."}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 20 }}>
+                  <div style={{ fontSize: 9, color: "#7a7860", letterSpacing: 2, textTransform: "uppercase" }}>Year</div>
+                  <input
+                    type="text"
+                    value={yearInput}
+                    onChange={handleYearInputChange}
+                    onBlur={handleYearInputBlur}
+                    onKeyDown={handleYearInputKeyDown}
+                    placeholder="e.g. 1865 or 500 BCE"
+                    style={{
+                      background: "#111108", border: "1px solid #3a3a2a",
+                      color: "#d8d0be", padding: "6px 10px", fontSize: 11,
+                      fontFamily: "'Courier New', monospace", width: 130, outline: "none",
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -265,7 +411,7 @@ export default function PromptOrganism() {
             <div style={{ background: "#0d0d0d", border: "1px solid #1e1e14", padding: "24px", marginBottom: 20, lineHeight: 1.8, fontSize: 14, color: "#d8d0be", minHeight: 120 }}>
               {evolving ? (
                 <div style={{ color: "#8a8870", fontStyle: "italic", animation: "pulse 1.5s infinite" }}>
-                  {blendValue >= 40 ? "Searching the world. Growing next generation..." : "Growing next generation..."}
+                  {isPresent ? "Searching the present. Growing next generation..." : `Drawing from ${displayYear(timeYear)}. Growing next generation...`}
                 </div>
               ) : current.prompt}
             </div>
@@ -375,6 +521,8 @@ export default function PromptOrganism() {
           border-radius: 50%; cursor: pointer; border: none;
         }
         textarea:focus { border-color: #c8a84a66 !important; }
+        select:focus { border-color: #c8a84a88 !important; }
+        input[type=text]:focus { border-color: #c8a84a66 !important; }
       `}</style>
     </div>
   );
